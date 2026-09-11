@@ -3,218 +3,355 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FC - Live Tester</title>
+    <title>FC - App Live Tester</title>
+    <!-- Firebase & Crypto Libraries -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; font-size: 13px; }
-        body { display: flex; height: 100vh; background: #0C1014; color: #FFF; }
-        #sidebar { width: 280px; border-right: 1px solid #333; display: flex; flex-direction: column; background: #121B22; }
-        #authBar { padding: 10px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 13px; }
+        body { display: flex; height: 100vh; background: #0C1014; color: #FFFFFF; }
+        #sidebar { width: 300px; border-right: 1px solid #222D34; display: flex; flex-direction: column; background: #111B21; }
+        #authBar { padding: 12px; border-bottom: 1px solid #222D34; display: flex; flex-direction: column; gap: 8px; background: #182229; }
+        .row { display: flex; justify-content: space-between; align-items: center; }
+        select { width: 100%; padding: 6px; background: #2A3942; border: 1px solid #444; color: #FFF; border-radius: 4px; }
         #userList { flex: 1; overflow-y: auto; list-style: none; }
-        .uItem { padding: 10px; border-bottom: 1px solid #222; cursor: pointer; }
-        .uItem:hover { background: #1F2C34; }
+        .uItem { padding: 12px; border-bottom: 1px solid #1E272D; cursor: pointer; }
+        .uItem:hover { background: #202C33; }
+        .uItem.active { background: #2A3942; border-left: 3px solid #1AB394; }
         #main { flex: 1; display: flex; flex-direction: column; }
-        #header { padding: 10px 14px; background: #1F2C34; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
-        #chat { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
-        .bubble { max-width: 70%; padding: 6px 10px; border-radius: 8px; }
-        .sent { align-self: flex-end; background: #005C4B; }
-        .received { align-self: flex-start; background: #202C33; }
-        .time { font-size: 10px; opacity: 0.7; text-align: right; margin-top: 2px; }
-        #bar { padding: 8px; background: #1F2C34; display: flex; gap: 6px; }
-        input { flex: 1; padding: 8px; background: #2A3942; border: 1px solid #444; color: #FFF; border-radius: 4px; }
-        button { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; background: #1AB394; color: #FFF; font-weight: bold; }
-        button.rec { background: #EF4444; }
+        #header { padding: 12px 16px; background: #202C33; border-bottom: 1px solid #222D34; display: flex; justify-content: space-between; align-items: center; }
+        #chat { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 6px; }
+        .bubble { max-width: 70%; padding: 8px 12px; border-radius: 8px; line-height: 1.4; word-break: break-word; }
+        .sent { align-self: flex-end; background: #005C4B; border-bottom-right-radius: 2px; }
+        .received { align-self: flex-start; background: #202C33; border-bottom-left-radius: 2px; }
+        .meta { font-size: 10px; opacity: 0.7; text-align: right; margin-top: 3px; }
+        #bar { padding: 10px; background: #202C33; display: flex; gap: 8px; align-items: center; }
+        input { flex: 1; padding: 10px 14px; background: #2A3942; border: none; color: #FFF; border-radius: 20px; outline: none; }
+        button { padding: 8px 14px; border: none; border-radius: 20px; cursor: pointer; background: #1AB394; color: #FFF; font-weight: bold; }
+        button.rec { background: #EF4444; user-select: none; }
+        button.rec:active { background: #B91C1C; }
     </style>
 </head>
 <body>
     <div id="sidebar">
         <div id="authBar">
-            <span id="myName">Sign In Required</span>
-            <button id="authBtn" onclick="toggleAuth()">Google Login</button>
+            <div class="row">
+                <span id="loginStatus" style="font-weight:bold; color:#1AB394;">Loading...</span>
+                <button id="authBtn" onclick="toggleGoogleAuth()" style="padding:4px 10px; font-size:11px;">Google Login</button>
+            </div>
+            <div>
+                <label style="font-size:11px; opacity:0.7;">Act As (My App Profile):</label>
+                <select id="selectMyUser" onchange="switchMyAccount(this.value)">
+                    <option value="">-- Choose Account --</option>
+                </select>
+            </div>
         </div>
+        <div style="padding:8px 12px; font-size:11px; color:#8E9297; text-transform:uppercase;">Chat with:</div>
         <ul id="userList"></ul>
     </div>
 
     <div id="main">
         <div id="header">
             <div>
-                <b id="targetTitle">Select a user to test</b>
-                <span id="remoteState" style="color:#1AB394; margin-left:8px;"></span>
+                <b id="targetTitle">Select a user to chat</b>
+                <div id="statusSub" style="font-size:11px; color:#1AB394; margin-top:2px;"></div>
             </div>
-            <div id="actionNotice" style="color:#F59E0B; font-weight:bold;"></div>
+            <div id="actionIndicator" style="color:#F59E0B; font-weight:bold; font-size:12px;"></div>
         </div>
-        <div id="chat"></div>
+
+        <div id="chat">
+            <div style="margin:auto; opacity:0.4;">Choose a contact from left to start testing</div>
+        </div>
+
         <div id="bar" style="display:none;">
-            <input type="text" id="mInput" placeholder="Message..." oninput="triggerTyping(true)">
+            <input type="text" id="mInput" placeholder="Message..." oninput="onInputText(this.value)" onkeydown="if(event.key==='Enter') send()">
             <button onclick="send()">Send</button>
-            <button class="rec" onmousedown="triggerRec(true)" onmouseup="triggerRec(false)" ontouchstart="triggerRec(true)" ontouchend="triggerRec(false)">Hold to Record</button>
+            <button class="rec" id="recBtn" onmousedown="setRecording(true)" onmouseup="setRecording(false)" ontouchstart="setRecording(true)" ontouchend="setRecording(false)">Hold to Record</button>
         </div>
     </div>
 
     <script>
-        // আপনার Firebase প্রজেক্টের কনফিগ কি-গুলো এখানে বসিয়ে দিন:
+        // আপনার Firebase প্রজেক্টের আসল কনফিগ কি-গুলো এখানে বসিয়ে দিন:
         const firebaseConfig = {
             apiKey: "AIzaSyCCnosiuV7f-888AEEdu53uBGdpv01zRH0",
-  authDomain: "friend-circle-bd.firebaseapp.com",
-  projectId: "friend-circle-bd",
-  storageBucket: "friend-circle-bd.firebasestorage.app",
-  messagingSenderId: "74503233422",
-  appId: "1:74503233422:web:be703933d73c9f09b34edf",
-  measurementId: "G-S1GZXC021X"
+            authDomain: "friend-circle-bd.firebaseapp.com",
+            projectId: "friend-circle-bd",
+            storageBucket: "friend-circle-bd.firebasestorage.app",
+            appId: "1:74503233422:web:be703933d73c9f09b34edf"
         };
 
         firebase.initializeApp(firebaseConfig);
         const auth = firebase.auth();
         const db = firebase.firestore();
 
-        let me = null, target = null, chatId = null, isCp1 = false, e2e = "", tUnsub = null, mUnsub = null, typeTimer = null;
+        let my10DigitUid = "";
+        let myProfileName = "";
+        let allAppUsers = [];
+        let targetUser = null;
+        let chatId = null;
+        let isCp1 = false;
+        let e2eKey = "";
+        let chatDocUnsub = null;
+        let messagesUnsub = null;
+        let typingTimeout = null;
 
-        auth.onAuthStateChanged(u => {
-            me = u;
-            if (u) {
-                document.getElementById('myName').innerText = u.displayName || u.email;
-                document.getElementById('authBtn').innerText = 'Logout';
-                db.collection("users").onSnapshot(s => {
-                    const ul = document.getElementById('userList');
-                    ul.innerHTML = '';
-                    s.forEach(doc => {
-                        const d = doc.data();
-                        if (d.uid !== me.uid) {
-                            const li = document.createElement('li');
-                            li.className = 'uItem';
-                            li.innerHTML = `<b>${d.name || d.phone}</b><br><small style="opacity:0.6">${d.phone || ''}</small>`;
-                            li.onclick = () => openChat(d);
-                            ul.appendChild(li);
-                        }
-                    });
+        // 1. Initial Load of All App Users from 'users' collection
+        db.collection("users").onSnapshot(snapshot => {
+            allAppUsers = [];
+            snapshot.forEach(doc => {
+                const d = doc.data();
+                allAppUsers.push({
+                    uid: d.uid || doc.id,
+                    name: d.name || d.phone || "User",
+                    phone: d.phone || "",
+                    email: d.email || ""
                 });
+            });
+            renderUserDropdown();
+            renderSidebarList();
+        });
+
+        // 2. Google Sign-In Listener
+        auth.onAuthStateChanged(authUser => {
+            const statusEl = document.getElementById("loginStatus");
+            const btn = document.getElementById("authBtn");
+            if (authUser) {
+                btn.innerText = "Logout";
+                // Match Google email with Firestore 10-digit user document
+                const matched = allAppUsers.find(u => u.email && u.email.toLowerCase() === authUser.email.toLowerCase());
+                if (matched) {
+                    setMyAccount(matched.uid, matched.name);
+                } else {
+                    statusEl.innerText = "Google User (No App Profile)";
+                }
             } else {
-                document.getElementById('myName').innerText = 'Sign In Required';
-                document.getElementById('authBtn').innerText = 'Google Login';
-                document.getElementById('userList').innerHTML = '';
+                btn.innerText = "Google Login";
+                statusEl.innerText = "Not Logged In";
             }
         });
 
-        function toggleAuth() {
-            if (me) auth.signOut();
+        function toggleGoogleAuth() {
+            if (auth.currentUser) auth.signOut();
             else auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
         }
 
-        async function openChat(user) {
-            target = user;
-            document.getElementById('targetTitle').innerText = user.name || user.phone;
-            document.getElementById('bar').style.display = 'flex';
-            if (tUnsub) tUnsub();
-            if (mUnsub) mUnsub();
-
-            let q1 = await db.collection("chats").where("chatperson1", "==", me.uid).where("chatperson2", "==", user.uid).get();
-            if (!q1.empty) { bind(q1.docs[0], true); return; }
-
-            let q2 = await db.collection("chats").where("chatperson1", "==", user.uid).where("chatperson2", "==", me.uid).get();
-            if (!q2.empty) { bind(q2.docs[0], false); return; }
-
-            chatId = null;
-            document.getElementById('chat').innerHTML = '<span style="margin:auto; opacity:0.5">Send a message to start conversation</span>';
+        function renderUserDropdown() {
+            const sel = document.getElementById("selectMyUser");
+            const currentVal = sel.value;
+            sel.innerHTML = '<option value="">-- Choose Account --</option>';
+            allAppUsers.forEach(u => {
+                const opt = document.createElement("option");
+                opt.value = u.uid;
+                opt.text = `${u.name} (${u.phone || u.uid})`;
+                sel.appendChild(opt);
+            });
+            if (my10DigitUid) sel.value = my10DigitUid;
         }
 
-        function bind(doc, first) {
-            chatId = doc.id;
-            isCp1 = first;
-            e2e = doc.data().e2ekey || "";
+        function switchMyAccount(uid) {
+            const user = allAppUsers.find(u => u.uid === uid);
+            if (user) setMyAccount(user.uid, user.name);
+        }
 
-            tUnsub = doc.ref.onSnapshot(snap => {
+        function setMyAccount(uid, name) {
+            my10DigitUid = uid;
+            myProfileName = name;
+            document.getElementById("loginStatus").innerText = name;
+            document.getElementById("selectMyUser").value = uid;
+            renderSidebarList();
+            if (targetUser) openConversation(targetUser);
+        }
+
+        function renderSidebarList() {
+            const ul = document.getElementById("userList");
+            ul.innerHTML = "";
+            allAppUsers.forEach(u => {
+                if (u.uid !== my10DigitUid) {
+                    const li = document.createElement("li");
+                    li.className = "uItem" + (targetUser && targetUser.uid === u.uid ? " active" : "");
+                    li.innerHTML = `<b>${u.name}</b><br><small style="opacity:0.6">${u.phone || u.uid}</small>`;
+                    li.onclick = () => openConversation(u);
+                    ul.appendChild(li);
+                }
+            });
+        }
+
+        // 3. Open Realtime Conversation Matching Android Database
+        async function openConversation(user) {
+            if (!my10DigitUid) {
+                alert("Please select your App Profile first from the top dropdown!");
+                return;
+            }
+
+            targetUser = user;
+            renderSidebarList();
+            document.getElementById("targetTitle").innerText = user.name;
+            document.getElementById("statusSub").innerText = user.phone || "Active";
+            document.getElementById("bar").style.display = "flex";
+
+            if (chatDocUnsub) chatDocUnsub();
+            if (messagesUnsub) messagesUnsub();
+
+            // Find 16-digit chat where cp1 == myUid AND cp2 == targetUid
+            let q1 = await db.collection("chats")
+                .where("chatperson1", "==", my10DigitUid)
+                .where("chatperson2", "==", user.uid).get();
+
+            if (!q1.empty) {
+                bindChat(q1.docs[0], true);
+                return;
+            }
+
+            // Reverse query where cp1 == targetUid AND cp2 == myUid
+            let q2 = await db.collection("chats")
+                .where("chatperson1", "==", user.uid)
+                .where("chatperson2", "==", my10DigitUid).get();
+
+            if (!q2.empty) {
+                bindChat(q2.docs[0], false);
+                return;
+            }
+
+            // If no chat document exists yet
+            chatId = null;
+            document.getElementById("chat").innerHTML = '<div style="margin:auto; opacity:0.4;">No messages yet. Send a message to start!</div>';
+        }
+
+        function bindChat(doc, isFirstPerson) {
+            chatId = doc.id;
+            isCp1 = isFirstPerson;
+            e2eKey = doc.data().e2ekey || "";
+
+            // Listen for Typing & Recording from the OPPOSITE person
+            chatDocUnsub = doc.ref.onSnapshot(snap => {
                 if (!snap.exists) return;
                 const d = snap.data();
-                const typing = isCp1 ? d["cp2-typing"] : d["cp1-typing"];
-                const recording = isCp1 ? d["cp2-recording"] : d["cp1-recording"];
-                const notice = document.getElementById('actionNotice');
-                if (recording) notice.innerText = "🎙️ Recording Voice...";
-                else if (typing) notice.innerText = "✍️ Typing...";
-                else notice.innerText = "";
+                const otherTyping = isCp1 ? d["cp2-typing"] : d["cp1-typing"];
+                const otherRec = isCp1 ? d["cp2-recording"] : d["cp1-recording"];
+                const ind = document.getElementById("actionIndicator");
+
+                if (otherRec) ind.innerText = "🎙️ Recording voice...";
+                else if (otherTyping) ind.innerText = "✍️ Typing...";
+                else ind.innerText = "";
             });
 
-            mUnsub = doc.ref.collection("messages").orderBy("timestamp", "asc").onSnapshot(snap => {
-                const box = document.getElementById('chat');
-                box.innerHTML = '';
+            // Listen for Messages
+            messagesUnsub = doc.ref.collection("messages").orderBy("timestamp", "asc").onSnapshot(snap => {
+                const box = document.getElementById("chat");
+                box.innerHTML = "";
                 snap.forEach(mDoc => {
                     const m = mDoc.data();
-                    const isMe = m.sender === me.uid;
+                    const isMe = (m.sender === my10DigitUid);
+
+                    // Mark unread as seen
                     if (!isMe && !m.seen) mDoc.ref.update({ seen: true });
-                    const txt = decrypt(m.massage, e2e);
+
+                    const text = decryptText(m.massage, e2eKey);
                     const tick = m.seen ? '<span style="color:#53BDEB">✓✓</span>' : '<span>✓✓</span>';
-                    const div = document.createElement('div');
-                    div.className = 'bubble ' + (isMe ? 'sent' : 'received');
-                    div.innerHTML = `${txt}<div class="time">${m.time || ''} ${isMe ? tick : ''}</div>`;
+
+                    const div = document.createElement("div");
+                    div.className = "bubble " + (isMe ? "sent" : "received");
+                    div.innerHTML = `<div>${escapeHtml(text)}</div><div class="meta">${m.time || ""} ${isMe ? tick : ""}</div>`;
                     box.appendChild(div);
                 });
                 box.scrollTop = box.scrollHeight;
             });
         }
 
-        function decrypt(c, k) {
+        // 4. AES/ECB/PKCS5 E2E Encryption (100% matching Android Kotlin)
+        function encryptText(plain, keyBase64) {
             try {
-                return CryptoJS.AES.decrypt(c, CryptoJS.enc.Base64.parse(k), { mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7 }).toString(CryptoJS.enc.Utf8) || "[Encrypted]";
-            } catch { return "[Encrypted]"; }
+                const key = CryptoJS.enc.Base64.parse(keyBase64);
+                return CryptoJS.AES.encrypt(plain, key, { mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7 }).toString();
+            } catch { return plain; }
         }
 
-        function encrypt(p, k) {
-            return CryptoJS.AES.encrypt(p, CryptoJS.enc.Base64.parse(k), { mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7 }).toString();
+        function decryptText(cipher, keyBase64) {
+            try {
+                const key = CryptoJS.enc.Base64.parse(keyBase64);
+                const dec = CryptoJS.AES.decrypt(cipher, key, { mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7 });
+                return dec.toString(CryptoJS.enc.Utf8) || "[Encrypted Message]";
+            } catch { return "[Encrypted Message]"; }
         }
 
+        function generate16DigitId() {
+            const first = Math.floor(1 + Math.random() * 9);
+            let rest = "";
+            for (let i = 0; i < 15; i++) rest += Math.floor(Math.random() * 10);
+            return first + rest;
+        }
+
+        // 5. Send Message to Firestore
         async function send() {
-            const inp = document.getElementById('mInput');
-            const txt = inp.value.trim();
-            if (!txt || !target) return;
-            triggerTyping(false);
+            const inp = document.getElementById("mInput");
+            const text = inp.value.trim();
+            if (!text || !targetUser || !my10DigitUid) return;
+
+            setTyping(false);
 
             if (!chatId) {
-                chatId = Math.floor(1000000000000000 + Math.random() * 9000000000000000).toString();
-                e2e = CryptoJS.enc.Base64.stringify(CryptoJS.lib.WordArray.random(16));
+                chatId = generate16DigitId();
+                e2eKey = CryptoJS.enc.Base64.stringify(CryptoJS.lib.WordArray.random(16));
                 isCp1 = true;
+
                 await db.collection("chats").document(chatId).set({
-                    chatperson1: me.uid,
-                    chatperson2: target.uid,
-                    e2ekey: e2e,
+                    chatperson1: my10DigitUid,
+                    chatperson2: targetUser.uid,
+                    e2ekey: e2eKey,
                     "cp1-typing": false, "cp1-recording": false,
                     "cp2-typing": false, "cp2-recording": false,
                     cp1_count: 0, cp2_count: 0,
                     createdAt: Date.now()
                 });
-                bind(await db.collection("chats").document(chatId).get(), true);
+                bindChat(await db.collection("chats").document(chatId).get(), true);
             }
 
             const cRef = db.collection("chats").document(chatId);
-            const cipher = encrypt(txt, e2e);
             const countKey = isCp1 ? "cp1_count" : "cp2_count";
             const snap = await cRef.get();
-            const count = (snap.data()[countKey] || 0) + 1;
+            const nextCount = (snap.data()[countKey] || 0) + 1;
+            const subDocId = (isCp1 ? "cp1-" : "cp2-") + nextCount;
 
-            await cRef.update({ [countKey]: count });
-            await cRef.collection("messages").document((isCp1 ? "cp1-" : "cp2-") + count).set({
-                massage: cipher,
+            await cRef.update({ [countKey]: nextCount });
+            await cRef.collection("messages").document(subDocId).set({
+                massage: encryptText(text, e2eKey),
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 date: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
                 timestamp: Date.now(),
                 seen: false,
-                sender: me.uid,
+                sender: my10DigitUid,
                 senderRole: isCp1 ? "cp1" : "cp2"
             });
-            inp.value = '';
+
+            inp.value = "";
         }
 
-        function triggerTyping(state) {
+        // 6. Typing & Voice Recording Indicator Triggers
+        function onInputText(val) {
             if (!chatId) return;
-            db.collection("chats").document(chatId).update({ [isCp1 ? "cp1-typing" : "cp2-typing"]: state });
-            clearTimeout(typeTimer);
-            if (state) typeTimer = setTimeout(() => triggerTyping(false), 2000);
+            setTyping(val.length > 0);
+            clearTimeout(typingTimeout);
+            if (val.length > 0) {
+                typingTimeout = setTimeout(() => setTyping(false), 2000);
+            }
         }
 
-        function triggerRec(state) {
+        function setTyping(state) {
             if (!chatId) return;
-            db.collection("chats").document(chatId).update({ [isCp1 ? "cp1-recording" : "cp2-recording"]: state });
+            const field = isCp1 ? "cp1-typing" : "cp2-typing";
+            db.collection("chats").document(chatId).update({ [field]: state });
+        }
+
+        function setRecording(state) {
+            if (!chatId) return;
+            const field = isCp1 ? "cp1-recording" : "cp2-recording";
+            db.collection("chats").document(chatId).update({ [field]: state });
+        }
+
+        function escapeHtml(t) {
+            return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         }
     </script>
 </body>
