@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FC - Live Tester</title>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; font-size: 13px; }
+        body { display: flex; height: 100vh; background: #0C1014; color: #FFF; }
+        #sidebar { width: 280px; border-right: 1px solid #333; display: flex; flex-direction: column; background: #121B22; }
+        #authBar { padding: 10px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+        #userList { flex: 1; overflow-y: auto; list-style: none; }
+        .uItem { padding: 10px; border-bottom: 1px solid #222; cursor: pointer; }
+        .uItem:hover { background: #1F2C34; }
+        #main { flex: 1; display: flex; flex-direction: column; }
+        #header { padding: 10px 14px; background: #1F2C34; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+        #chat { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+        .bubble { max-width: 70%; padding: 6px 10px; border-radius: 8px; }
+        .sent { align-self: flex-end; background: #005C4B; }
+        .received { align-self: flex-start; background: #202C33; }
+        .time { font-size: 10px; opacity: 0.7; text-align: right; margin-top: 2px; }
+        #bar { padding: 8px; background: #1F2C34; display: flex; gap: 6px; }
+        input { flex: 1; padding: 8px; background: #2A3942; border: 1px solid #444; color: #FFF; border-radius: 4px; }
+        button { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; background: #1AB394; color: #FFF; font-weight: bold; }
+        button.rec { background: #EF4444; }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <div id="authBar">
+            <span id="myName">Sign In Required</span>
+            <button id="authBtn" onclick="toggleAuth()">Google Login</button>
+        </div>
+        <ul id="userList"></ul>
+    </div>
+
+    <div id="main">
+        <div id="header">
+            <div>
+                <b id="targetTitle">Select a user to test</b>
+                <span id="remoteState" style="color:#1AB394; margin-left:8px;"></span>
+            </div>
+            <div id="actionNotice" style="color:#F59E0B; font-weight:bold;"></div>
+        </div>
+        <div id="chat"></div>
+        <div id="bar" style="display:none;">
+            <input type="text" id="mInput" placeholder="Message..." oninput="triggerTyping(true)">
+            <button onclick="send()">Send</button>
+            <button class="rec" onmousedown="triggerRec(true)" onmouseup="triggerRec(false)" ontouchstart="triggerRec(true)" ontouchend="triggerRec(false)">Hold to Record</button>
+        </div>
+    </div>
+
+    <script>
+        // আপনার Firebase প্রজেক্টের কনফিগ কি-গুলো এখানে বসিয়ে দিন:
+        const firebaseConfig = {
+            apiKey: "PASTE_YOUR_API_KEY",
+            authDomain: "PASTE_PROJECT_ID.firebaseapp.com",
+            projectId: "PASTE_PROJECT_ID",
+            storageBucket: "PASTE_PROJECT_ID.appspot.com",
+            appId: "PASTE_APP_ID"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        let me = null, target = null, chatId = null, isCp1 = false, e2e = "", tUnsub = null, mUnsub = null, typeTimer = null;
+
+        auth.onAuthStateChanged(u => {
+            me = u;
+            if (u) {
+                document.getElementById('myName').innerText = u.displayName || u.email;
+                document.getElementById('authBtn').innerText = 'Logout';
+                db.collection("users").onSnapshot(s => {
+                    const ul = document.getElementById('userList');
+                    ul.innerHTML = '';
+                    s.forEach(doc => {
+                        const d = doc.data();
+                        if (d.uid !== me.uid) {
+                            const li = document.createElement('li');
+                            li.className = 'uItem';
+                            li.innerHTML = `<b>${d.name || d.phone}</b><br><small style="opacity:0.6">${d.phone || ''}</small>`;
+                            li.onclick = () => openChat(d);
+                            ul.appendChild(li);
+                        }
+                    });
+                });
+            } else {
+                document.getElementById('myName').innerText = 'Sign In Required';
+                document.getElementById('authBtn').innerText = 'Google Login';
+                document.getElementById('userList').innerHTML = '';
+            }
+        });
+
+        function toggleAuth() {
+            if (me) auth.signOut();
+            else auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+        }
+
+        async function openChat(user) {
+            target = user;
+            document.getElementById('targetTitle').innerText = user.name || user.phone;
+            document.getElementById('bar').style.display = 'flex';
+            if (tUnsub) tUnsub();
+            if (mUnsub) mUnsub();
+
+            let q1 = await db.collection("chats").where("chatperson1", "==", me.uid).where("chatperson2", "==", user.uid).get();
+            if (!q1.empty) { bind(q1.docs[0], true); return; }
+
+            let q2 = await db.collection("chats").where("chatperson1", "==", user.uid).where("chatperson2", "==", me.uid).get();
+            if (!q2.empty) { bind(q2.docs[0], false); return; }
+
+            chatId = null;
+            document.getElementById('chat').innerHTML = '<span style="margin:auto; opacity:0.5">Send a message to start conversation</span>';
+        }
+
+        function bind(doc, first) {
+            chatId = doc.id;
+            isCp1 = first;
+            e2e = doc.data().e2ekey || "";
+
+            tUnsub = doc.ref.onSnapshot(snap => {
+                if (!snap.exists) return;
+                const d = snap.data();
+                const typing = isCp1 ? d["cp2-typing"] : d["cp1-typing"];
+                const recording = isCp1 ? d["cp2-recording"] : d["cp1-recording"];
+                const notice = document.getElementById('actionNotice');
+                if (recording) notice.innerText = "🎙️ Recording Voice...";
+                else if (typing) notice.innerText = "✍️ Typing...";
+                else notice.innerText = "";
+            });
+
+            mUnsub = doc.ref.collection("messages").orderBy("timestamp", "asc").onSnapshot(snap => {
+                const box = document.getElementById('chat');
+                box.innerHTML = '';
+                snap.forEach(mDoc => {
+                    const m = mDoc.data();
+                    const isMe = m.sender === me.uid;
+                    if (!isMe && !m.seen) mDoc.ref.update({ seen: true });
+                    const txt = decrypt(m.massage, e2e);
+                    const tick = m.seen ? '<span style="color:#53BDEB">✓✓</span>' : '<span>✓✓</span>';
+                    const div = document.createElement('div');
+                    div.className = 'bubble ' + (isMe ? 'sent' : 'received');
+                    div.innerHTML = `${txt}<div class="time">${m.time || ''} ${isMe ? tick : ''}</div>`;
+                    box.appendChild(div);
+                });
+                box.scrollTop = box.scrollHeight;
+            });
+        }
+
+        function decrypt(c, k) {
+            try {
+                return CryptoJS.AES.decrypt(c, CryptoJS.enc.Base64.parse(k), { mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7 }).toString(CryptoJS.enc.Utf8) || "[Encrypted]";
+            } catch { return "[Encrypted]"; }
+        }
+
+        function encrypt(p, k) {
+            return CryptoJS.AES.encrypt(p, CryptoJS.enc.Base64.parse(k), { mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7 }).toString();
+        }
+
+        async function send() {
+            const inp = document.getElementById('mInput');
+            const txt = inp.value.trim();
+            if (!txt || !target) return;
+            triggerTyping(false);
+
+            if (!chatId) {
+                chatId = Math.floor(1000000000000000 + Math.random() * 9000000000000000).toString();
+                e2e = CryptoJS.enc.Base64.stringify(CryptoJS.lib.WordArray.random(16));
+                isCp1 = true;
+                await db.collection("chats").document(chatId).set({
+                    chatperson1: me.uid,
+                    chatperson2: target.uid,
+                    e2ekey: e2e,
+                    "cp1-typing": false, "cp1-recording": false,
+                    "cp2-typing": false, "cp2-recording": false,
+                    cp1_count: 0, cp2_count: 0,
+                    createdAt: Date.now()
+                });
+                bind(await db.collection("chats").document(chatId).get(), true);
+            }
+
+            const cRef = db.collection("chats").document(chatId);
+            const cipher = encrypt(txt, e2e);
+            const countKey = isCp1 ? "cp1_count" : "cp2_count";
+            const snap = await cRef.get();
+            const count = (snap.data()[countKey] || 0) + 1;
+
+            await cRef.update({ [countKey]: count });
+            await cRef.collection("messages").document((isCp1 ? "cp1-" : "cp2-") + count).set({
+                massage: cipher,
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                date: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+                timestamp: Date.now(),
+                seen: false,
+                sender: me.uid,
+                senderRole: isCp1 ? "cp1" : "cp2"
+            });
+            inp.value = '';
+        }
+
+        function triggerTyping(state) {
+            if (!chatId) return;
+            db.collection("chats").document(chatId).update({ [isCp1 ? "cp1-typing" : "cp2-typing"]: state });
+            clearTimeout(typeTimer);
+            if (state) typeTimer = setTimeout(() => triggerTyping(false), 2000);
+        }
+
+        function triggerRec(state) {
+            if (!chatId) return;
+            db.collection("chats").document(chatId).update({ [isCp1 ? "cp1-recording" : "cp2-recording"]: state });
+        }
+    </script>
+</body>
+</html>
